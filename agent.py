@@ -1,9 +1,24 @@
-from database import get_order
-from policy import check_policy
-from inventory import check_inventory
-from actions import replace_product, issue_refund
-from verification import verify_refund, verify_replacement
+import os
+import json
+
+from dotenv import load_dotenv
+from google import genai
+
+from tools import (
+    get_customer_order,
+    check_resolution_policy,
+    check_replacement_inventory,
+    execute_replacement,
+    execute_refund,
+    verify_final_refund,
+    verify_final_replacement
+)
+
+from database import save_agent_event
 from intent import analyze_request
+
+
+load_dotenv()
 
 
 class AgentState:
@@ -24,25 +39,145 @@ class AgentState:
 
         self.history = []
 
+        self.ai_reasoning = None
+
+        self.gemini_available = bool(
+            os.getenv("GEMINI_API_KEY")
+        )
+
 
     def add_history(self, step, result):
 
-        self.history.append({
+        event = {
             "step": step,
             "result": result
-        })
+        }
+
+        self.history.append(event)
+
+        try:
+
+            save_agent_event(
+                step,
+                str(result)
+            )
+
+        except Exception as error:
+
+            print(
+                "Could not save agent event:",
+                error
+            )
 
 
     def understand_request(self):
 
         self.add_history(
             "understanding_request",
-            "Analyzing what resolution the customer requested"
+            "Analyzing customer intent"
         )
 
+        # First use the deterministic intent detector.
         self.intent = analyze_request(
             self.customer_request
         )
+
+        # Use Gemini to understand the request and explain
+        # the reasoning behind the requested resolution.
+        if self.gemini_available:
+
+            try:
+
+                client = genai.Client(
+                    api_key=os.getenv("GEMINI_API_KEY")
+                )
+
+                prompt = f"""
+You are the reasoning layer of ResolveX,
+an autonomous customer resolution agent.
+
+Customer request:
+{self.customer_request}
+
+Identify:
+1. customer intent
+2. issue
+3. requested resolution
+4. concise reasoning
+
+Possible intents:
+replacement, refund, cancellation, unknown.
+
+Return ONLY valid JSON in this format:
+
+{{
+  "intent": "replacement",
+  "issue": "damaged product",
+  "requested_resolution": "replacement",
+  "reasoning": "Customer explicitly requested a replacement."
+}}
+"""
+
+                response = client.models.generate_content(
+                    model="gemini-3.8-flash",
+                    contents=prompt
+                )
+
+                ai_text = response.text.strip()
+
+                # Remove accidental markdown fences.
+                if ai_text.startswith("```"):
+
+                    ai_text = ai_text.replace(
+                        "```json",
+                        ""
+                    ).replace(
+                        "```",
+                        ""
+                    ).strip()
+
+                self.ai_reasoning = json.loads(
+                    ai_text
+                )
+
+                self.add_history(
+                    "gemini_reasoning",
+                    self.ai_reasoning
+                )
+
+                # Gemini can improve the detected intent,
+                # but downstream tools remain authoritative.
+                if self.ai_reasoning.get("intent"):
+
+                    self.intent = {
+                        "intent":
+                            self.ai_reasoning["intent"],
+
+                        "reason":
+                            self.ai_reasoning.get(
+                                "reasoning",
+                                "Gemini analyzed the request."
+                            )
+                    }
+
+            except Exception as error:
+
+                self.add_history(
+                    "gemini_fallback",
+                    "Gemini unavailable. Using deterministic intent analysis."
+                )
+
+                print(
+                    "Gemini error:",
+                    error
+                )
+
+        else:
+
+            self.add_history(
+                "gemini_fallback",
+                "Gemini API key unavailable. Using deterministic intent analysis."
+            )
 
         self.add_history(
             "request_intent",
@@ -56,19 +191,32 @@ class AgentState:
 
         self.add_history(
             "investigating_order",
-            "Looking up order information"
+            "Agent is using the customer/order tool"
         )
 
-        self.order = get_order(order_id)
+        order_data = get_customer_order(
+            order_id
+        )
 
-        if self.order:
+        if order_data["success"]:
+
+            self.order = (
+                order_data["order_id"],
+                order_data["customer"],
+                order_data["product"],
+                order_data["status"],
+                order_data["issue"],
+                order_data["price"]
+            )
 
             self.add_history(
                 "order_found",
-                "Order information retrieved successfully"
+                "Customer and order information retrieved successfully"
             )
 
         else:
+
+            self.order = None
 
             self.add_history(
                 "order_not_found",
@@ -93,10 +241,10 @@ class AgentState:
 
         self.add_history(
             "checking_policy",
-            "Checking resolution policy"
+            "Agent is using the policy tool"
         )
 
-        self.policy = check_policy(
+        self.policy = check_resolution_policy(
             self.order[4],
             self.order[3]
         )
@@ -119,10 +267,12 @@ class AgentState:
 
         self.add_history(
             "checking_inventory",
-            "Checking replacement availability"
+            "Agent is using the inventory tool"
         )
 
-        self.inventory = check_inventory(product)
+        self.inventory = check_replacement_inventory(
+            product
+        )
 
         self.add_history(
             "inventory_checked",
@@ -136,7 +286,7 @@ class AgentState:
 
         self.add_history(
             "making_decision",
-            "Agent is deciding the best resolution"
+            "Agent is evaluating intent, policy and available options"
         )
 
         if self.decision == "escalate":
@@ -172,6 +322,11 @@ class AgentState:
 
             self.decision = "refund"
 
+            self.add_history(
+                "fallback_decision",
+                "Replacement unavailable during investigation. Refund selected."
+            )
+
         else:
 
             self.decision = "escalate"
@@ -188,18 +343,18 @@ class AgentState:
 
         self.add_history(
             "executing_action",
-            "Agent is executing the selected resolution"
+            "Agent selected a tool and is executing the resolution"
         )
 
         if self.decision == "replacement":
 
-            self.action_result = replace_product(
+            self.action_result = execute_replacement(
                 self.order[2]
             )
 
         elif self.decision == "refund":
 
-            self.action_result = issue_refund(
+            self.action_result = execute_refund(
                 self.order[5]
             )
 
@@ -207,7 +362,8 @@ class AgentState:
 
             self.action_result = {
                 "success": False,
-                "reason": "Order could not be safely resolved.",
+                "reason":
+                    "Order could not be safely resolved.",
                 "escalated": True
             }
 
@@ -215,7 +371,8 @@ class AgentState:
 
             self.action_result = {
                 "success": False,
-                "reason": "No valid resolution available."
+                "reason":
+                    "No valid resolution available."
             }
 
         self.add_history(
@@ -234,6 +391,11 @@ class AgentState:
 
         if self.action_result.get("success"):
 
+            self.add_history(
+                "adaptation",
+                "Action succeeded. No replanning was required."
+            )
+
             return
 
         if self.decision == "escalate":
@@ -247,7 +409,7 @@ class AgentState:
 
         self.add_history(
             "adaptation",
-            "Original action failed. Agent is replanning."
+            "Original action failed. Agent observed the failure and is replanning."
         )
 
         if self.decision == "replacement":
@@ -266,18 +428,18 @@ class AgentState:
 
         self.add_history(
             "verification",
-            "Verifying the final resolution"
+            "Agent is using the verification tool to check the final outcome"
         )
 
         if self.decision == "refund":
 
-            self.verification = verify_refund(
+            self.verification = verify_final_refund(
                 self.action_result
             )
 
         elif self.decision == "replacement":
 
-            self.verification = verify_replacement(
+            self.verification = verify_final_replacement(
                 self.action_result
             )
 
@@ -293,7 +455,8 @@ class AgentState:
 
             self.verification = {
                 "verified": False,
-                "message": "No resolution to verify."
+                "message":
+                    "No resolution to verify."
             }
 
         self.add_history(
@@ -308,21 +471,50 @@ class AgentState:
 
         print("\n--- AGENT STATE ---")
 
-        print("Goal:", self.customer_request)
+        print(
+            "Goal:",
+            self.customer_request
+        )
 
-        print("Intent:", self.intent)
+        print(
+            "Intent:",
+            self.intent
+        )
 
-        print("Order:", self.order)
+        print(
+            "Gemini reasoning:",
+            self.ai_reasoning
+        )
 
-        print("Policy:", self.policy)
+        print(
+            "Order:",
+            self.order
+        )
 
-        print("Inventory:", self.inventory)
+        print(
+            "Policy:",
+            self.policy
+        )
 
-        print("Decision:", self.decision)
+        print(
+            "Inventory:",
+            self.inventory
+        )
 
-        print("Action result:", self.action_result)
+        print(
+            "Decision:",
+            self.decision
+        )
 
-        print("Verification:", self.verification)
+        print(
+            "Action result:",
+            self.action_result
+        )
+
+        print(
+            "Verification:",
+            self.verification
+        )
 
         print("\nHistory:")
 

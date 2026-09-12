@@ -43,6 +43,14 @@ def setup_database():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS agent_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            step TEXT,
+            result TEXT
+        )
+    """)
+
 
     cursor.execute("""
         INSERT OR IGNORE INTO customers
@@ -110,6 +118,26 @@ def get_order(order_id):
     return result
 
 
+def save_agent_event(step, result):
+
+    connection = sqlite3.connect("resolvex.db")
+
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        INSERT INTO agent_events
+        (step, result)
+        VALUES (?, ?)
+    """, (
+        step,
+        result
+    ))
+
+    connection.commit()
+
+    connection.close()
+
+
 if __name__ == "__main__":
 
     setup_database()
@@ -120,3 +148,12 @@ if __name__ == "__main__":
 
     print("Order information:")
     print(order)
+
+    save_agent_event(
+        "test",
+        "Agent event storage is working."
+    )
+
+    print(
+        "Agent event saved successfully."
+    )
