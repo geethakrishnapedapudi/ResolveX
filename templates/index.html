@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>ResolveX | Autonomous Resolution Agent</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fa;
+            color: #172033;
+        }
+
+        .header {
+            background: #111827;
+            color: white;
+            padding: 22px 45px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 30px;
+        }
+
+        .header p {
+            margin: 6px 0 0;
+            color: #cbd5e1;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 14px;
+            padding: 25px;
+            margin-bottom: 22px;
+            box-shadow: 0 3px 12px #00000012;
+        }
+
+        .card h2 {
+            margin-top: 0;
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 14px;
+            resize: vertical;
+            border: 1px solid #d1d5db;
+            border-radius: 9px;
+            font-size: 15px;
+            font-family: Arial, sans-serif;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #2563eb;
+        }
+
+        button {
+            margin-top: 15px;
+            padding: 13px 24px;
+            border: none;
+            border-radius: 9px;
+            background: #2563eb;
+            color: white;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        .status {
+            padding: 15px;
+            background: #f1f5f9;
+            border-radius: 9px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .step {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 15px;
+            margin: 10px 0;
+            background: #f8fafc;
+            border-radius: 9px;
+            border-left: 5px solid #2563eb;
+        }
+
+        .icon {
+            font-size: 11px;
+            font-weight: bold;
+            min-width: 55px;
+            padding: 6px 7px;
+            background: #e2e8f0;
+            border-radius: 5px;
+            text-align: center;
+            color: #334155;
+        }
+
+        .step-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-transform: capitalize;
+        }
+
+        .step-result {
+            color: #475569;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .decision {
+            padding: 18px;
+            margin-top: 20px;
+            background: #eff6ff;
+            border-radius: 10px;
+            border-left: 5px solid #2563eb;
+        }
+
+        .decision strong {
+            text-transform: uppercase;
+        }
+
+        .final-result {
+            padding: 20px;
+            margin-top: 20px;
+            background: #ecfdf5;
+            border-left: 5px solid #16a34a;
+            border-radius: 10px;
+        }
+
+        .final-result h3 {
+            margin-top: 0;
+        }
+
+        .escalated {
+            background: #fff7ed;
+            border-left-color: #ea580c;
+        }
+
+        .empty {
+            color: #64748b;
+        }
+
+        .flow {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .flow-item {
+            padding: 7px 10px;
+            background: #e2e8f0;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .arrow {
+            padding: 7px 0;
+            color: #64748b;
+            font-weight: bold;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+    <div class="header">
+
+        <h1>ResolveX</h1>
+
+        <p>
+            Autonomous Customer Resolution Agent
+        </p>
+
+    </div>
+
+
+    <div class="container">
+
+
+        <div class="card">
+
+            <h2>Customer Request</h2>
+
+            <textarea
+                id="request"
+                placeholder="Example: My headphones arrived damaged. Please replace them. Order ORD1001"
+            ></textarea>
+
+            <button
+                id="resolveButton"
+                onclick="startAgent()"
+            >
+                Resolve Customer Issue
+            </button>
+
+        </div>
+
+
+        <div class="card">
+
+            <h2>Agent Activity</h2>
+
+            <div
+                class="status"
+                id="status"
+            >
+                Waiting for customer request...
+            </div>
+
+
+            <div class="flow">
+
+                <div class="flow-item">
+                    OBSERVE
+                </div>
+
+                <div class="arrow">
+                    →
+                </div>
+
+                <div class="flow-item">
+                    DECIDE
+                </div>
+
+                <div class="arrow">
+                    →
+                </div>
+
+                <div class="flow-item">
+                    ACT
+                </div>
+
+                <div class="arrow">
+                    →
+                </div>
+
+                <div class="flow-item">
+                    ADAPT
+                </div>
+
+                <div class="arrow">
+                    →
+                </div>
+
+                <div class="flow-item">
+                    VERIFY
+                </div>
+
+            </div>
+
+
+            <div id="timeline">
+
+                <p class="empty">
+                    The agent's actions will appear here.
+                </p>
+
+            </div>
+
+        </div>
+
+
+    </div>
+
+
+    <script>
+
+
+        function startAgent() {
+
+
+            let request =
+                document.getElementById("request").value;
+
+
+            if (request.trim() === "") {
+
+                alert(
+                    "Please enter a customer request."
+                );
+
+                return;
+            }
+
+
+            let button =
+                document.getElementById(
+                    "resolveButton"
+                );
+
+
+            button.disabled = true;
+
+            button.innerText =
+                "Agent Working...";
+
+
+            document.getElementById(
+                "status"
+            ).innerHTML =
+                "ResolveX is investigating the request...";
+
+
+            document.getElementById(
+                "timeline"
+            ).innerHTML = "";
+
+
+            fetch("/resolve", {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+                    request: request
+                })
+
+            })
+
+
+            .then(response =>
+                response.json()
+            )
+
+
+            .then(data => {
+
+
+                button.disabled = false;
+
+                button.innerText =
+                    "Resolve Customer Issue";
+
+
+                if (data.error) {
+
+                    document.getElementById(
+                        "status"
+                    ).innerHTML =
+                        "Agent encountered an error.";
+
+                    return;
+                }
+
+
+                let timeline =
+                    document.getElementById(
+                        "timeline"
+                    );
+
+
+                timeline.innerHTML =
+                    "<h3>Agent Decision Timeline</h3>";
+
+
+                data.history.forEach(item => {
+
+
+                    let step =
+                        document.createElement(
+                            "div"
+                        );
+
+
+                    step.className =
+                        "step";
+
+
+                    let icon = "STEP";
+
+
+                    if (
+                        item.step.includes("request")
+                    ) {
+
+                        icon = "INPUT";
+
+                    }
+
+                    else if (
+                        item.step.includes("order")
+                    ) {
+
+                        icon = "DATA";
+
+                    }
+
+                    else if (
+                        item.step.includes("policy")
+                    ) {
+
+                        icon = "POLICY";
+
+                    }
+
+                    else if (
+                        item.step.includes("inventory")
+                    ) {
+
+                        icon = "TOOL";
+
+                    }
+
+                    else if (
+                        item.step.includes("decision")
+                    ) {
+
+                        icon = "DECIDE";
+
+                    }
+
+                    else if (
+                        item.step.includes("action")
+                    ) {
+
+                        icon = "ACT";
+
+                    }
+
+                    else if (
+                        item.step.includes("adapt") ||
+                        item.step.includes("replanned")
+                    ) {
+
+                        icon = "ADAPT";
+
+                    }
+
+                    else if (
+                        item.step.includes("verification")
+                    ) {
+
+                        icon = "VERIFY";
+
+                    }
+
+
+                    let result =
+                        typeof item.result === "object"
+                            ? JSON.stringify(
+                                item.result
+                            )
+                            : item.result;
+
+
+                    step.innerHTML =
+
+                        "<div class='icon'>" +
+                        icon +
+                        "</div>" +
+
+                        "<div>" +
+
+                        "<div class='step-title'>" +
+                        item.step.replace(
+                            /_/g,
+                            " "
+                        ) +
+                        "</div>" +
+
+                        "<div class='step-result'>" +
+                        result +
+                        "</div>" +
+
+                        "</div>";
+
+
+                    timeline.appendChild(
+                        step
+                    );
+
+                });
+
+
+                let decision =
+                    document.createElement(
+                        "div"
+                    );
+
+
+                decision.className =
+                    "decision";
+
+
+                decision.innerHTML =
+
+                    "<strong>Agent Decision: </strong>" +
+                    data.decision;
+
+
+                timeline.appendChild(
+                    decision
+                );
+
+
+                let finalResult =
+                    document.createElement(
+                        "div"
+                    );
+
+
+                if (
+                    data.verification &&
+                    data.verification.verified
+                ) {
+
+                    finalResult.className =
+                        "final-result";
+
+
+                    document.getElementById(
+                        "status"
+                    ).innerHTML =
+                        "Resolution completed and verified.";
+
+                }
+
+                else {
+
+                    finalResult.className =
+                        "final-result escalated";
+
+
+                    document.getElementById(
+                        "status"
+                    ).innerHTML =
+                        "Request requires safe escalation.";
+
+                }
+
+
+                finalResult.innerHTML =
+
+                    "<h3>Final Verification</h3>" +
+
+                    "<p>" +
+                    data.verification.message +
+                    "</p>";
+
+
+                timeline.appendChild(
+                    finalResult
+                );
+
+
+            })
+
+
+            .catch(error => {
+
+
+                button.disabled = false;
+
+                button.innerText =
+                    "Resolve Customer Issue";
+
+
+                document.getElementById(
+                    "status"
+                ).innerHTML =
+                    "Could not connect to ResolveX agent.";
+
+
+                console.log(error);
+
+            });
+
+        }
+
+
+    </script>
+
+
+</body>
+
+</html>
